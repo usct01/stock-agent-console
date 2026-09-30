@@ -1,0 +1,14 @@
+{
+  "asOf": "2026-09-30T18:11:32.512Z",
+  "total": 7020,
+  "sp500": 502,
+  "byExchange": {
+    "nasdaq": 4022,
+    "nyse": 2705,
+    "amex": 293
+  },
+  "sources": [
+    "api.nasdaq.com screener",
+    "en.wikipedia.org S&P 500 constituents"
+  ]
+}

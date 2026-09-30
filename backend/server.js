@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { analyzeTA, sentimentOf, scoreTicker, assessRisk, annualRows, computeFys } from './lib/analysis.js'
+import { resolveCompany, datasetStats } from './lib/resolve.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const FA_CACHE = path.join(ROOT, '.opencode', 'cache', 'fa')
@@ -18,14 +19,9 @@ const CIKS = {
   AMZN: '0001018724', TSLA: '0001318605', NVDA: '0001045810', META: '0001326801',
   EQIX: '0001101239', AVGO: '0001730168', AMD: '0000002488', NFLX: '0001065280',
 }
-// Company-name → ticker resolution (Yahoo needs symbols, not names)
-const NAME_MAP = {
-  APPLE: 'AAPL', NVIDIA: 'NVDA', EQUINIX: 'EQIX', MICROSOFT: 'MSFT',
-  ALPHABET: 'GOOGL', GOOGLE: 'GOOGL', AMAZON: 'AMZN', TESLA: 'TSLA',
-  META: 'META', FACEBOOK: 'META', BROADCOM: 'AVGO', AMD: 'AMD',
-  'ADVANCED MICRO DEVICES': 'AMD', NETFLIX: 'NFLX',
-}
-const resolveTicker = (t) => NAME_MAP[t] || t
+// Company-name → ticker resolution over backend/data/tickers.json
+// (NASDAQ + NYSE + AMEX with S&P 500 flags). Falls back to raw input.
+const resolveTicker = (t) => resolveCompany(t)?.symbol || t
 const REPORTS_FILE = path.join(ROOT, '.opencode', 'cache', 'reports', 'history.jsonl')
 
 async function appendHistory(record) {
@@ -143,6 +139,11 @@ async function gfNews(ticker, exchange = 'NASDAQ') {
 
 app.get('/api/health', (_, res) => res.json({ ok: true, time: new Date().toISOString() }))
 app.get('/api/agents', (_, res) => res.json({ agents: AGENTS }))
+app.get('/api/resolve', (req, res) => {
+  const q = String(req.query.q || '')
+  const result = resolveCompany(q)
+  res.json({ query: q, result, dataset: datasetStats() })
+})
 app.get('/api/reports', async (req, res) => {
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || '20', 10) || 20))
   res.json({ reports: await readHistory(limit) })
