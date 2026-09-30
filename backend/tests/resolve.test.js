@@ -23,6 +23,8 @@ describe('common names', () => {
     ['Coca-Cola', 'KO'], ['3M', 'MMM'], ['Johnson & Johnson', 'JNJ'],
     ['Procter & Gamble', 'PG'], ['Advanced Micro Devices', 'AMD'],
     ['Alphabet', 'GOOGL'], ['Google', 'GOOGL'], ['Facebook', 'META'],
+    ['JPMorgan', 'JPM'], ['JP Morgan', 'JPM'], ['Bank of America', 'BAC'],
+    ['Morgan Stanley', 'MS'], ['Wells Fargo', 'WFC'], ['Goldman Sachs', 'GS'],
   ]
   for (const [q, sym] of cases) {
     it(`${q} -> ${sym}`, () => {
@@ -46,6 +48,14 @@ describe('symbols in, symbols out', () => {
   it('emits Yahoo-style class shares, never slashes', () => {
     assert.equal(resolveCompany('Berkshire Hathaway')?.symbol, 'BRK-B')
     assert.match(resolveCompany('Berkshire Hathaway')?.symbol || '', /^[A-Z0-9.-]+$/)
+  })
+  it('prefers common stock over preferred depositary shares', () => {
+    // Regression: run-together "JPMorgan" must not match JPM^J-style preferreds.
+    for (const q of ['JPMorgan', 'JP Morgan', 'JPMorgan Chase']) {
+      const r = resolveCompany(q)
+      assert.equal(r?.symbol, 'JPM')
+      assert.match(r?.name || '', /Common Stock/)
+    }
   })
 })
 

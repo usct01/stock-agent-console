@@ -249,10 +249,10 @@ export default function App() {
                     {r.quote?.fiftyTwoWeekHigh ? ` · 52w $${r.quote.fiftyTwoWeekLow?.toFixed(0)}–$${r.quote.fiftyTwoWeekHigh.toFixed(0)}` : ''}
                   </p>
                 )}
-                {r.fa && r.fa.fys.length > 0 && (
+                {(r.fa?.fys ?? []).length > 0 && (
                   <>
-                    <h4>Fundamentals (SEC EDGAR{r.fa.cached ? ', cached' : ', live'})</h4>
-                    <FaBars fys={r.fa.fys} ticker={r.ticker} />
+                    <h4>Fundamentals (SEC EDGAR{r.fa?.cached ? ', cached' : ', live'})</h4>
+                    <FaBars fys={r.fa?.fys ?? []} ticker={r.ticker} />
                   </>
                 )}
                 {r.filings && <p className="muted small">SEC: {r.filings.map((f) => `${f.form} filed ${f.filed}`).join('; ')}.</p>}

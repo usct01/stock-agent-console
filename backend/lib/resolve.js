@@ -24,6 +24,7 @@ const STOP = new Set(
 
 export function norm(raw) {
   return String(raw || '')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2') // split run-together words ("JPMorgan" -> "JP Morgan")
     .toUpperCase()
     .replace(/\([^)]*\)/g, ' ') // "(The)", "(Class A)" ...
     .replace(/&/g, '') // AT&T -> ATT
@@ -74,15 +75,34 @@ export function resolveCompany(query) {
     if (t.tokens.size === 0) continue
     if ([...qt].every((w) => t.tokens.has(w))) cands.push(t)
   }
-  if (!cands.length) return null
-  cands.sort((a, b) =>
-    (b.sp - a.sp) ||
-    (a.tokens.size - qt.length) - (b.tokens.size - qt.length) ||
-    (a.s < b.s ? -1 : 1),
-  )
-  const best = cands[0]
-  // exact = same token set; otherwise fuzzy (query was a subset of a longer name)
-  return out(best, best.tokens.size === qt.length ? 'exact' : 'fuzzy')
+  if (cands.length) {
+    cands.sort((a, b) =>
+      (b.sp - a.sp) ||
+      (a.tokens.size - qt.length) - (b.tokens.size - qt.length) ||
+      (a.s < b.s ? -1 : a.s > b.s ? 1 : 0),
+    )
+    const best = cands[0]
+    // exact = same token set; otherwise fuzzy (query was a subset of a longer name)
+    return out(best, best.tokens.size === qt.length ? 'exact' : 'fuzzy')
+  }
+  // Concatenated fallback for run-together spellings ("JPMorgan", "BerkshireHathaway").
+  // Requires 4+ chars on both sides to avoid substring noise on short queries.
+  const flat = qt.join('')
+  if (flat.length >= 4) {
+    const c2 = INDEX.filter((t) => {
+      if (t.tokens.size === 0) return false
+      const f = [...t.tokens].join('')
+      if (f.length < 4) return false
+      return f.includes(flat) || flat.includes(f)
+    })
+    c2.sort((a, b) =>
+      (b.sp - a.sp) ||
+      Math.abs([...a.tokens].join('').length - flat.length) - Math.abs([...b.tokens].join('').length - flat.length) ||
+      (a.s < b.s ? -1 : a.s > b.s ? 1 : 0),
+    )
+    if (c2.length) return out(c2[0], 'fuzzy')
+  }
+  return null
 }
 
 function out(t, method) {

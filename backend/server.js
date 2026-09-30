@@ -18,6 +18,8 @@ const CIKS = {
   AAPL: '0000320193', MSFT: '0000789019', GOOGL: '0001652044', GOOG: '0001652044',
   AMZN: '0001018724', TSLA: '0001318605', NVDA: '0001045810', META: '0001326801',
   EQIX: '0001101239', AVGO: '0001730168', AMD: '0000002488', NFLX: '0001065280',
+  JPM: '0000019617', BAC: '0000070858', WFC: '0000072971', C: '0000831001',
+  GS: '0000886982', MS: '0000895421', KO: '0000021344', JNJ: '0000200406', PG: '0000080424',
 }
 // Company-name → ticker resolution over backend/data/tickers.json
 // (NASDAQ + NYSE + AMEX with S&P 500 flags). Falls back to raw input.
@@ -81,7 +83,7 @@ async function yahooHistory(ticker, range) {
 }
 async function secFilings(ticker) {
   const cik = CIKS[ticker]
-  if (!cik) return { note: 'CIK unknown – SEC skipped' }
+  if (!cik) return { filings: [], note: 'CIK unknown – SEC skipped' }
   const d = await getJSON(`https://data.sec.gov/submissions/CIK${cik}.json`, SEC_UA)
   const f = d.filings.recent
   const out = []
@@ -93,7 +95,7 @@ async function secFilings(ticker) {
 // Annual fundamentals from SEC companyfacts (cached 24h). Returns last 3 FYs.
 async function faFacts(ticker) {
   const cik = CIKS[ticker]
-  if (!cik) return { note: 'CIK unknown – fundamentals skipped' }
+  if (!cik) return { fys: [], note: 'CIK unknown – fundamentals skipped' }
   const cacheFile = path.join(FA_CACHE, `${ticker}.json`)
   try {
     const st = await fs.stat(cacheFile)
@@ -184,7 +186,10 @@ app.post('/api/run', async (req, res) => {
         await sleep(1000)
       }
       if (want.has('finance-news') || want.has('sentiment')) {
-        item.news = await gfNews(t)
+        // Yahoo exchangeName: NMS→NASDAQ, NYQ→NYSE, ASE/AMX→AMEX. GF pages are per-exchange.
+        const x = item.quote?.exchangeName || ''
+        const xchg = /NYQ/.test(x) ? 'NYSE' : /ASE|AMX/.test(x) ? 'AMEX' : 'NASDAQ'
+        item.news = await gfNews(t, xchg)
       }
       if (want.has('sentiment')) item.sentiment = sentimentOf(item.news || [])
       if (item.ta) {
