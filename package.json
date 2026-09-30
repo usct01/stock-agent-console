@@ -13,7 +13,8 @@
     "dev:frontend": "npm --workspace frontend run dev",
     "dev:backend": "npm --workspace backend start",
     "build": "npm --workspace frontend run build",
-    "start": "npm --workspace backend start"
+    "start": "npm --workspace backend start",
+    "test": "npm --workspace backend test"
   },
   "engines": {
     "node": ">=20"

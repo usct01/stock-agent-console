@@ -5,6 +5,7 @@ export type AgentId =
   | 'earnings'
   | 'sentiment'
   | 'screener'
+  | 'risk-analysis'
 
 export interface AgentMeta {
   id: AgentId
@@ -21,6 +22,7 @@ export const AGENTS: AgentMeta[] = [
   { id: 'earnings', title: 'Earnings', blurb: 'Dates, actuals vs (unofficial) estimates, surprise + price reaction.', sources: 'SEC, Yahoo, websearch', keywords: 'EPS, quarter, guidance' },
   { id: 'sentiment', title: 'Sentiment', blurb: 'News/social tone with strict GDELT backoff (60s) + cache.', sources: 'GDELT, Google Finance', keywords: 'buzz, mood, tone' },
   { id: 'screener', title: 'Screener', blurb: 'Rank 2–10 tickers with deterministic -5..+5 rules.', sources: 'Yahoo + TA cache', keywords: 'screen, rank, compare' },
+  { id: 'risk-analysis', title: 'Risk Analysis', blurb: 'Deterministic 0-100 rating from leverage, earnings, valuation, volatility, RSI.', sources: 'SEC + Yahoo (no key)', keywords: 'risk, rating, downside' },
 ]
 
 export const FULL_SET: AgentId[] = [
@@ -29,4 +31,5 @@ export const FULL_SET: AgentId[] = [
   'fundamental-analysis',
   'earnings',
   'sentiment',
+  'risk-analysis',
 ]

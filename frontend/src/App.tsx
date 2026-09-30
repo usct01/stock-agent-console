@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AGENTS, FULL_SET, type AgentId } from './agents'
 import { TvChart, RsiChart, FaBars, type Series, type FaFy } from './charts'
 import './styles.css'
@@ -16,14 +16,24 @@ interface RunResult {
   filings?: { form: string; filed: string; acc: string }[]
   news?: { title: string; url: string }[]
   sentiment?: { label: string }
+  risk?: { score: number; rating: string; drivers: [string, string][]; marker: string }
 }
 interface RunResponse {
   asOf: string
   range: string
   results: RunResult[]
-  screener: { ticker: string; price: number; score: number; rsi: number | null; vsSMA50: number | null; rvol: number }[]
+  screener: { ticker: string; price: number; score: number; rsi: number | null; vsSMA50: number | null; rvol: number; risk?: number | null; rating?: string | null }[]
   markdown: string
   notes: string[]
+}
+interface HistoryItem {
+  id: string
+  asOf: string
+  tickers: string[]
+  range: string
+  screener: RunResponse['screener']
+  risks: { ticker: string; rating: string; score: number; marker: string }[]
+  markdown: string
 }
 
 function Badge({ children, tone }: { children: string; tone: 'up' | 'down' | 'flat' }) {
@@ -39,6 +49,15 @@ export default function App() {
   const [running, setRunning] = useState(false)
   const [report, setReport] = useState<RunResponse | null>(null)
   const [runError, setRunError] = useState('')
+  const [history, setHistory] = useState<HistoryItem[]>([])
+
+  const loadHistory = async () => {
+    try {
+      const res = await fetch('/api/reports?limit=20')
+      if (res.ok) setHistory(await res.json().then((d) => d.reports))
+    } catch { /* history best-effort */ }
+  }
+  useEffect(() => { loadHistory() }, [])
 
   const parsed = useMemo(
     () =>
@@ -95,6 +114,7 @@ export default function App() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
       setReport(data)
+      loadHistory()
     } catch (e) {
       setRunError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -190,7 +210,7 @@ export default function App() {
         {report && (
           <>
             <table>
-              <thead><tr><th>Ticker</th><th>Price</th><th>Day%</th><th>RSI</th><th>vs SMA50</th><th>Score</th></tr></thead>
+              <thead><tr><th>Ticker</th><th>Price</th><th>Day%</th><th>RSI</th><th>vs SMA50</th><th>Score</th><th>Risk</th></tr></thead>
               <tbody>
                 {report.results.map((r) => {
                   const s = report.screener.find((x) => x.ticker === r.ticker)
@@ -206,6 +226,7 @@ export default function App() {
                         <span className="score-bar"><span className={`fill ${s && s.score >= 0 ? 'pos' : 'neg'}`} style={{ width: `${Math.abs(s?.score ?? 0) * 20}%` }} /></span>
                         {s?.score ?? 'n/a'}
                       </td>
+                      <td>{r.risk ? <Badge tone={r.risk.rating === 'Low' ? 'up' : r.risk.rating === 'High' ? 'down' : 'flat'}>{`${r.risk.rating} ${r.risk.score}`}</Badge> : 'n/a'}</td>
                     </tr>
                   )
                 })}
@@ -217,6 +238,7 @@ export default function App() {
                   {r.ticker} — ${r.quote?.regularMarketPrice?.toFixed(2) ?? r.ta?.last.c.toFixed(2) ?? 'n/a'}
                   {r.ta && <Badge tone={r.ta.bias.includes('Bullish') ? 'up' : r.ta.bias.includes('Bearish') ? 'down' : 'flat'}>{r.ta.bias}</Badge>}
                   {r.sentiment && <Badge tone={r.sentiment.label === 'Positive' ? 'up' : r.sentiment.label === 'Negative' ? 'down' : 'flat'}>{r.sentiment.label}</Badge>}
+                  {r.risk && <Badge tone={r.risk.rating === 'Low' ? 'up' : r.risk.rating === 'High' ? 'down' : 'flat'}>{`Risk ${r.risk.rating} ${r.risk.score}/100`}</Badge>}
                 </h3>
                 {r.series && <TvChart series={r.series} ticker={r.ticker} />}
                 {r.series && <RsiChart closes={r.series.closes} dates={r.series.dates} />}
@@ -234,6 +256,12 @@ export default function App() {
                   </>
                 )}
                 {r.filings && <p className="muted small">SEC: {r.filings.map((f) => `${f.form} filed ${f.filed}`).join('; ')}.</p>}
+                {r.risk && (
+                  <details>
+                    <summary>Risk drivers ({r.risk.rating} {r.risk.score}/100)</summary>
+                    <ul>{r.risk.drivers.map(([k, v]) => <li key={k}><strong>{k}:</strong> {v}</li>)}</ul>
+                  </details>
+                )}
                 {r.news && r.news.length > 0 && (
                   <>
                     <h4>News</h4>
@@ -251,6 +279,23 @@ export default function App() {
             <p className="muted small">Not financial advice.</p>
           </>
         )}
+      </section>
+
+      <section className="card no-print">
+        <div className="report-head">
+          <h2>5. History</h2>
+          <button onClick={loadHistory}>Refresh</button>
+        </div>
+        {history.length === 0 && <p className="muted">No past runs yet — reports persist here after each run (last 200 kept).</p>}
+        {history.map((h) => (
+          <details key={h.id}>
+            <summary>
+              {h.asOf.slice(0, 16).replace('T', ' ')} UTC · {h.tickers.join(', ')} ·{' '}
+              {h.risks.map((r) => `${r.ticker} ${r.rating} ${r.score}`).join(' · ') || 'no risk scores'}
+            </summary>
+            <pre className="prompt">{h.markdown}</pre>
+          </details>
+        ))}
       </section>
     </div>
   )

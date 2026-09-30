@@ -24,10 +24,14 @@ Open http://localhost:5173 (dev) or http://localhost:3001 (prod).
 ## What you get
 
 - **Run report** – `POST /api/run {tickers, agents, range}` → comparison table, per-ticker cards
-  (candles + volume + SMA, RSI pane, FY revenue/margin charts from SEC EDGAR, headlines, filings), screener rank, markdown + print-to-PDF.
+  (candles + volume + SMA, RSI pane, FY revenue/margin charts from SEC EDGAR, headlines, filings),
+  deterministic risk rating, screener rank, markdown + print-to-PDF.
+- **History** – every run persists to `.opencode/cache/reports/history.jsonl` (last 200);
+  `GET /api/reports` + History panel in the UI. `npm test` runs the offline backend suite (16 tests).
 - **Company names work** – `Equinix, NVIDIA` resolve to `EQIX, NVDA`.
 - **opencode agents** (`.opencode/agent/`) – `finance-news`, `technical-analysis`, `fundamental-analysis`,
-  `earnings`, `sentiment`, `screener`, plus `orchestrator` (routes) and `aggregator` (merges).
+  `earnings`, `sentiment`, `screener`, `risk-analysis` (deterministic 0-100 rating, `Overall Risk Rating:` marker),
+  plus `orchestrator` (routes) and `aggregator` (merges).
   Copy the app's generated prompt into opencode for estimates + full filing analysis.
 
 ## API
@@ -35,6 +39,7 @@ Open http://localhost:5173 (dev) or http://localhost:3001 (prod).
 - `GET /api/health` – liveness (used by render.yaml)
 - `GET /api/agents` – agent registry
 - `POST /api/run` – `{tickers: ["AAPL","GOOG"], agents: [...], range: "6mo"}` (1–5 tickers, `1mo|3mo|6mo|1y`)
+- `GET /api/reports?limit=20` – persisted run history (markdown + scores, no OHLC bulk)
 
 ## Deploy (Render, no Docker)
 

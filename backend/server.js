@@ -3,6 +3,7 @@ import cors from 'cors'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { analyzeTA, sentimentOf, scoreTicker, assessRisk, annualRows, computeFys } from './lib/analysis.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const FA_CACHE = path.join(ROOT, '.opencode', 'cache', 'fa')
@@ -25,6 +26,24 @@ const NAME_MAP = {
   'ADVANCED MICRO DEVICES': 'AMD', NETFLIX: 'NFLX',
 }
 const resolveTicker = (t) => NAME_MAP[t] || t
+const REPORTS_FILE = path.join(ROOT, '.opencode', 'cache', 'reports', 'history.jsonl')
+
+async function appendHistory(record) {
+  try {
+    await fs.mkdir(path.dirname(REPORTS_FILE), { recursive: true })
+    let lines = []
+    try { lines = (await fs.readFile(REPORTS_FILE, 'utf8')).split('\n').filter(Boolean) } catch { /* first run */ }
+    lines.push(JSON.stringify(record))
+    await fs.writeFile(REPORTS_FILE, lines.slice(-200).join('\n') + '\n')
+  } catch { /* history best-effort */ }
+}
+
+async function readHistory(limit = 20) {
+  try {
+    const lines = (await fs.readFile(REPORTS_FILE, 'utf8')).split('\n').filter(Boolean)
+    return lines.slice(-limit).map((l) => JSON.parse(l)).reverse()
+  } catch { return [] }
+}
 const AGENTS = [
   { id: 'finance-news', title: 'Finance News' },
   { id: 'technical-analysis', title: 'Technical Analysis' },
@@ -32,6 +51,7 @@ const AGENTS = [
   { id: 'earnings', title: 'Earnings' },
   { id: 'sentiment', title: 'Sentiment' },
   { id: 'screener', title: 'Screener' },
+  { id: 'risk-analysis', title: 'Risk Analysis' },
   { id: 'orchestrator', title: 'Orchestrator' },
   { id: 'aggregator', title: 'Aggregator' },
 ]
@@ -87,48 +107,15 @@ async function faFacts(ticker) {
   } catch { /* miss → fetch */ }
   const d = await getJSON(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, SEC_UA)
   const tags = d.facts?.['us-gaap'] || {}
-  const annual = (names) => {
-    // Merge across candidate tags: same metric may change tags across years (e.g. GOOG revenue).
-    const merged = {}
-    for (const name of names) {
-      const u = tags[name]?.units?.USD
-      if (!u) continue
-      // Flow facts (income): exact CYxxxx frames are annual totals – prefer them.
-      const exact = u.filter((x) => /^CY\d{4}$/.test(x.frame || '')).sort((a, b) => a.frame.localeCompare(b.frame))
-      const pick = exact.length ? exact : Object.values(
-        u.reduce((m, x) => {
-          // Instant facts (balance sheet): CYxxxxQxI frames – latest quarter per year.
-          const mt = /^CY(\d{4})Q[1-4]I$/.exec(x.frame || '')
-          if (!mt) return m
-          if (!m[mt[1]] || x.frame > m[mt[1]].frame) m[mt[1]] = x
-          return m
-        }, {}),
-      ).sort((a, b) => a.frame.localeCompare(b.frame))
-      for (const x of pick) {
-        const fy = x.frame.slice(2, 6)
-        if (!(fy in merged)) merged[fy] = { fy, end: x.end, val: x.val }
-      }
-    }
-    return Object.values(merged).sort((a, b) => a.fy.localeCompare(b.fy)).slice(-4)
-  }
   const byFy = {}
   const put = (key, rows) => rows.forEach((r) => { (byFy[r.fy] ??= { fy: r.fy }).end = r.end; byFy[r.fy][key] = r.val })
-  put('rev', annual(['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet']))
-  put('ni', annual(['NetIncomeLoss']))
-  put('equity', annual(['StockholdersEquity']))
-  put('assets', annual(['Assets']))
-  put('debt', annual(['LongTermDebtNoncurrent']))
-  put('cash', annual(['CashAndCashEquivalentsAtCarryingValue']))
-  const fysAll = Object.values(byFy).sort((a, b) => a.fy.localeCompare(b.fy)).slice(-4).map((f, i, arr) => {
-    const prev = arr[i - 1]
-    return {
-      ...f,
-      margin: f.rev && f.ni != null ? f.ni / f.rev : null,
-      revYoY: f.rev && prev?.rev ? f.rev / prev.rev - 1 : null,
-      roe: f.ni != null && f.equity ? f.ni / f.equity : null,
-      de: f.debt != null && f.equity ? f.debt / f.equity : null,
-    }
-  })
+  put('rev', annualRows(tags, ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet']))
+  put('ni', annualRows(tags, ['NetIncomeLoss']))
+  put('equity', annualRows(tags, ['StockholdersEquity']))
+  put('assets', annualRows(tags, ['Assets']))
+  put('debt', annualRows(tags, ['LongTermDebtNoncurrent']))
+  put('cash', annualRows(tags, ['CashAndCashEquivalentsAtCarryingValue']))
+  const fysAll = computeFys(byFy)
   const fys = fysAll.slice(-3)
   const out = { fys, cached: false }
   try { await fs.mkdir(FA_CACHE, { recursive: true }); await fs.writeFile(cacheFile, JSON.stringify(out)) } catch { /* cache best-effort */ }
@@ -154,44 +141,12 @@ async function gfNews(ticker, exchange = 'NASDAQ') {
   }
 }
 
-function sma(arr, k) { return arr.length >= k ? arr.slice(-k).reduce((a, b) => a + b, 0) / k : null }
-function rsiWilder(closes, p = 14) {
-  if (closes.length < p + 1) return null
-  const g = [], l = []
-  for (let i = 1; i < closes.length; i++) { g.push(Math.max(0, closes[i] - closes[i - 1])); l.push(Math.max(0, closes[i - 1] - closes[i])) }
-  let ag = g.slice(0, p).reduce((a, b) => a + b, 0) / p
-  let al = l.slice(0, p).reduce((a, b) => a + b, 0) / p
-  for (let i = p; i < g.length; i++) { ag = (ag * (p - 1) + g[i]) / p; al = (al * (p - 1) + l[i]) / p }
-  return al === 0 ? 100 : 100 - 100 / (1 + ag / al)
-}
-function analyzeTA(bars) {
-  const closes = bars.map((b) => b.c), highs = bars.map((b) => b.h), lows = bars.map((b) => b.l), vols = bars.map((b) => b.v)
-  const n = closes.length
-  const sma20 = sma(closes, 20), sma50 = sma(closes, 50)
-  const rsi = rsiWilder(closes)
-  const sd = Math.sqrt(closes.slice(-20).reduce((a, c) => a + (c - sma20) ** 2, 0) / 20)
-  const pctB = (closes[n - 1] - (sma20 - 2 * sd)) / (4 * sd)
-  const trs = []
-  for (let i = 1; i < n; i++) trs.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])))
-  const atr = trs.slice(-14).reduce((a, b) => a + b, 0) / 14
-  const vavg = vols.slice(-20).reduce((a, b) => a + b, 0) / 20
-  const rvol = vols[n - 1] / vavg
-  const ret5 = (closes[n - 1] / closes[n - 6] - 1) * 100
-  const bias = sma50 == null ? `Neutral (SMA50 n/a – ${n} bars)` : closes[n - 1] > sma50 && rsi >= 55 ? 'Bullish-lean' : closes[n - 1] < sma50 && rsi < 45 ? 'Bearish-lean' : 'Neutral'
-  return { n, last: bars[n - 1], sma20, sma50, rsi, pctB, atr, rvol, ret5, bias, high20: Math.max(...highs.slice(-20)), low20: Math.min(...lows.slice(-20)) }
-}
-function sentimentOf(headlines) {
-  if (!headlines.length) return { label: 'Unknown (thin sample)', bull: [], bear: [] }
-  const pos = /beat|surge|growth|record|upgrade|bull|rally|strong|buy|launch/i
-  const neg = /miss|drop|cut|downgrade|bear|lawsuit|fine|layoff|risk|probe|miss/i
-  const bull = headlines.filter((h) => pos.test(h.title)).slice(0, 3)
-  const bear = headlines.filter((h) => neg.test(h.title)).slice(0, 3)
-  const label = bull.length >= Math.ceil(headlines.length * 0.6) ? 'Positive' : bear.length >= Math.ceil(headlines.length * 0.6) ? 'Negative' : 'Mixed'
-  return { label, bull, bear }
-}
-
 app.get('/api/health', (_, res) => res.json({ ok: true, time: new Date().toISOString() }))
 app.get('/api/agents', (_, res) => res.json({ agents: AGENTS }))
+app.get('/api/reports', async (req, res) => {
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit || '20', 10) || 20))
+  res.json({ reports: await readHistory(limit) })
+})
 
 app.post('/api/run', async (req, res) => {
   try {
@@ -231,14 +186,22 @@ app.post('/api/run', async (req, res) => {
         item.news = await gfNews(t)
       }
       if (want.has('sentiment')) item.sentiment = sentimentOf(item.news || [])
+      if (item.ta) {
+        item.risk = assessRisk({
+          ta: item.ta,
+          fys: item.fa?.fys,
+          pe: item.quote?.trailingPE ?? null,
+          closes: item.series?.closes,
+        })
+      }
       results.push(item)
     }
     const screener = results
       .filter((r) => r.ta)
       .map((r) => {
         const { ta } = r
-        let s = (ta.sma50 == null ? 0 : ta.last.c > ta.sma50 ? 1 : -1) + (ta.rsi == null ? 0 : ta.rsi < 30 ? 1 : ta.rsi > 70 ? -1 : 0) + (ta.ret5 > 5 ? 1 : ta.ret5 < -5 ? -1 : 0) + (ta.rvol >= 2 ? 1 : 0)
-        return { ticker: r.ticker, price: ta.last.c, score: Math.max(-5, Math.min(5, s)), rsi: ta.rsi == null ? null : +ta.rsi.toFixed(1), vsSMA50: ta.sma50 == null ? null : +(((ta.last.c / ta.sma50) - 1) * 100).toFixed(2), rvol: +ta.rvol.toFixed(2) }
+        const s = scoreTicker(ta)
+        return { ticker: r.ticker, price: ta.last.c, score: s, rsi: ta.rsi == null ? null : +ta.rsi.toFixed(1), vsSMA50: ta.sma50 == null ? null : +(((ta.last.c / ta.sma50) - 1) * 100).toFixed(2), rvol: ta.rvol == null ? null : +ta.rvol.toFixed(2), risk: r.risk?.score ?? null, rating: r.risk?.rating ?? null }
       })
       .sort((a, b) => b.score - a.score)
     const f2 = (v) => (v == null || Number.isNaN(v) ? 'n/a' : Number(v).toFixed(2))
@@ -253,10 +216,13 @@ app.post('/api/run', async (req, res) => {
         lines.push(`FA FY${f.fy}${r.fa.cached ? ' (SEC cached)' : ''}: rev $${(f.rev / 1e9).toFixed(1)}B (${f.revYoY == null ? 'n/a' : (f.revYoY * 100).toFixed(1) + '% YoY'}), margin ${f.margin == null ? 'n/a' : (f.margin * 100).toFixed(1) + '%'}, ROE ${f2(f.roe)}, LT D/E ${f2(f.de)}.`)
       }      if (r.news?.length) { lines.push('News:'); r.news.slice(0, 5).forEach((n, i) => lines.push(`${i + 1}. ${n.title}`)) }
       if (r.sentiment) lines.push(`Sentiment: ${r.sentiment.label}.`)
+      if (r.risk) lines.push(`${r.risk.marker}.`)
       if (r.errors.length) lines.push(`Notes: ${r.errors.join(' | ')}`)
       lines.push('Not financial advice.', '')
     }
-    res.json({ asOf, range, results, screener, markdown: lines.join('\n'), notes: ['Quotes/TA: Yahoo live.', 'Filings + FY fundamentals: SEC EDGAR (facts cached 24h; www.sec.gov may 403 on shared IPs).', 'News: Google Finance page scrape, best-effort.', 'Estimates need websearch – run @earnings in opencode for those.', 'GDELT skipped server-side (throttled); sentiment from headlines only.'] })
+    const payload = { asOf, range, results, screener, markdown: lines.join('\n'), notes: ['Quotes/TA: Yahoo live.', 'Filings + FY fundamentals: SEC EDGAR (facts cached 24h; www.sec.gov may 403 on shared IPs).', 'Risk: deterministic 0-100 (leverage/liquidity/profitability/valuation/volatility/RSI).', 'News: Google Finance page scrape, best-effort.', 'Estimates need websearch – run @earnings in opencode for those.', 'GDELT skipped server-side (throttled); sentiment from headlines only.'] }
+    appendHistory({ id: `${Date.now()}-${tickers.join('')}`, asOf, tickers, range, screener, risks: results.filter((r) => r.risk).map((r) => ({ ticker: r.ticker, ...r.risk })), markdown: payload.markdown })
+    res.json(payload)
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) })
   }

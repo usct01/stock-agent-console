@@ -11,11 +11,13 @@ and opencode subagents (`.opencode/agent/`) for deep analysis. No API keys anywh
 - `earnings` – dates/actuals from SEC, estimates labelled unofficial (websearch).
 - `sentiment` – GF headlines + GDELT with 60s backoff, cache `.opencode/cache/sentiment/` 2h.
 - `screener` – deterministic -5..+5 rank, reuses TA cache.
+- `risk-analysis` – deterministic 0-100 rating (leverage/profitability/valuation/volatility/RSI; unknowns get small weight + note), emits `Overall Risk Rating:` marker.
 - `orchestrator` – routes via Task tool (SEC sleep 1, Yahoo sleep 2, sentiment last), hands raw outputs to `aggregator`.
-- `aggregator` – merges only, conflict rules (price→Yahoo live, RSI→TA, actuals→SEC).
+- `aggregator` – merges only, conflict rules (price→Yahoo live, RSI→TA, actuals→SEC, risk→marker line).
 
-## Backend (`backend/server.js`)
-Mirrors the agents over HTTP: `GET /api/health`, `GET /api/agents`, `POST /api/run {tickers, agents, range}`.
+## Backend (`backend/server.js`, pure math in `backend/lib/analysis.js`)
+Mirrors the agents over HTTP: `GET /api/health`, `GET /api/agents`, `POST /api/run {tickers, agents, range}`,
+`GET /api/reports` (history from `.opencode/cache/reports/history.jsonl`, last 200). `npm test` runs the offline suite.
 Serves `frontend/dist` in production (single process). Free sources only: Yahoo chart, SEC `data.sec.gov`, Google Finance pages.
 Known limits: `www.sec.gov` 403s on shared IPs (use `data.sec.gov` + hardcoded CIKs), GDELT throttles (skipped server-side),
 `www.google.com/finance` pages are heavy (~1.5MB, regex headline extract). Estimates need websearch → opencode path.
