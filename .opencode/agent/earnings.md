@@ -27,11 +27,11 @@ Inputs:
 Steps:
 1. Date: websearch `"<TICKER> next earnings date 2026"` + check SEC submissions `https://data.sec.gov/submissions/CIK##########.json` for latest 10-Q/10-K filingDate. Report `next (unofficial)` vs `last filed`.
 2. Actuals: from submissions → latest 10-Q/10-K accession → companyfacts frame rule (quarterly `frame CYxxxxQx` for Q actuals, annual `frame CYxxxx` for FY; ignore frame-less YTD). Tags: `RevenueFromContractWithCustomerExcludingAssessedTax`, `NetIncomeLoss`, `EarningsPerShareDiluted`. Link `https://www.sec.gov/Archives/edgar/data/CIKNUM/ACCNODASH/PRIMARYDOC`.
-3. Estimates: websearch `"<TICKER> Qx 2026 EPS estimate revenue estimate"` (2-3 sources, e.g. Yahoo/Zacks/Nasdaq). Record range + consensus if consistent, else `mixed`. Compute surprise only if consensus consistent: `(actual-consensus)/|consensus|`.
+3. Estimates: websearch `"<TICKER> Qx 2026 EPS estimate revenue estimate"` (2-3 sources, e.g. Yahoo/Zacks/Nasdaq). Record range + consensus if consistent, else `mixed`. Surprise math (same as `backend/lib/analysis.js` `earningSurprise`): `(actual-consensus)/|consensus|`; label Beat if >+2%, Miss if <-2%, else In-line; `n/a` if est missing or zero (never divide by zero). Compute surprise only if consensus consistent.
 4. Price reaction: Yahoo `https://query1.finance.yahoo.com/v8/finance/chart/TICKER?range=5d&interval=1d` → close on filing date vs prior/next close. `sleep 2` between Yahoo calls.
 5. Cache: `.opencode/cache/earnings/<TICKER>-<FYQ>.json` 24h TTL. State `cached` vs `live`.
 
-Output per ticker:
+Output per ticker (always include the marker line for the aggregator):
 ```
 ## TICKER Qx FY – beat/miss/mixed
 Source: 10-Q acc ... filed YYYY-MM-DD (actuals) + websearch estimates (unofficial) + Yahoo price.
@@ -39,6 +39,7 @@ Date: last filed YYYY-MM-DD, next (unofficial) YYYY-MM-DD.
 | Revenue act | Rev est | Rev surprise | EPS act | EPS est | EPS surprise |
 Highlights (filing, max 3 bullets): ...
 Price: $x filing-day close (+y% vs prior day).
+EPS Surprise: Beat +6.9% (TICKER Q3 FY2026, actual 2.02 vs est 1.89)
 Not financial advice.
 What I did: ...
 What to try next: ...

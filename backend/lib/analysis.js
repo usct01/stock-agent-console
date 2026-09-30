@@ -164,3 +164,25 @@ export function assessRisk({ ta, fys, pe, closes }) {
   const rating = score <= 30 ? 'Low' : score <= 60 ? 'Moderate' : 'High'
   return { score, rating, drivers, marker: `Overall Risk Rating: ${rating} (Score: ${score}/100)` }
 }
+
+// Earnings surprise: (actual - est) / |est|. Label Beat/Miss/In-line (±2% band).
+// Returns null pct when est is missing or zero (never divide by zero).
+export function earningSurprise(actual, est) {
+  if (actual == null || est == null || est === 0) return { pct: null, label: 'n/a' }
+  const pct = (actual - est) / Math.abs(est)
+  const label = pct > 0.02 ? 'Beat' : pct < -0.02 ? 'Miss' : 'In-line'
+  return { pct, label }
+}
+
+export function earningsMarker(ticker, q, actual, est) {
+  const s = earningSurprise(actual, est)
+  const fmt = (v) => (v == null ? 'n/a' : v)
+  const pct = s.pct == null ? 'n/a' : `${s.pct >= 0 ? '+' : ''}${(s.pct * 100).toFixed(1)}%`
+  return `EPS Surprise: ${s.label} ${pct} (${ticker} ${q}, actual ${fmt(actual)} vs est ${fmt(est)})`
+}
+
+// Machine-readable screener line for the aggregator.
+export function screenerMarker(ticker, score) {
+  const s = Math.max(-5, Math.min(5, score))
+  return `Screener Score: ${ticker} ${s >= 0 ? '+' : ''}${s}/±5`
+}

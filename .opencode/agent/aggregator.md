@@ -14,6 +14,9 @@ Input: original request + raw outputs from any of finance-news, technical-analys
 Rules:
 - Keep every number traceable: `value (source, timestamp)`. Drop any number without a source.
 - Conflicts: price → prefer Yahoo live w/ latest timestamp, note spread. RSI/indicators → prefer technical-analysis (Wilder). Actuals → prefer SEC filings over estimates. Estimates always labelled unofficial. Risk → prefer risk-analysis marker line (`Overall Risk Rating: X (Score: N/100)`); never recompute it.
+- Markers (parse, don't recompute): `Overall Risk Rating: <Low|Moderate|High> (Score: <0-100>/100)` → Risk section;
+  `EPS Surprise: <Beat|Miss|In-line|n/a> <±x.x%> (<TICKER> <Q> <FY>, actual <a> vs est <e>)` → Earnings section;
+  `Screener Score: <TICKER> <±N>/±5` → comparison table. If a marker is absent, derive nothing – write `n/a (no marker)`.
 - Dedupe news across finance-news/sentiment/earnings by URL/headline. Max 5 news per ticker in final.
 - Missing data: show `n/a (blocked: ...)` – never fill from memory. List stale caches (`cached HH:MM UTC` > TTL).
 - Always end with risks + sources + "Not financial advice."

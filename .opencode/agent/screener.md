@@ -30,11 +30,12 @@ Steps:
 3. Score (+1/-1 each, sum): Close>SMA50 +1 else -1; RSI<30 +1 bounce-watch (RSI>70 -1); MACD hist>0 +1 else -1; %B>1 +1 momentum / %B<0 -1 breakdown; RVOL≥2 +1 attention (direction-agnostic); 5d return >+5% +1 / <-5% -1. Clamp -5..+5.
 4. Flags: `oversold-bounce-watch` (RSI<30), `breakout` (%B>1 + RVOL≥1.5), `breakdown` (%B<0), `unusual-volume` (RVOL≥2), `near-52w-high` (within 2%), `trend-up` (Close>SMA50 + MACD>0).
 
-Output:
+Output (always include one marker line per ticker for the aggregator):
 ```
 # Screen YYYY-MM-DD HH:MM UTC (N tickers, 6mo/1d, Yahoo live/cached)
 | Rank | Ticker | Price | Score | Signals | RSI | MACD | vs SMA50 | RVOL |
 | ... |
+Screener Score: AAPL +1/±5
 Notes: SMA200 n/a (128 bars). RVOL intraday if market open.
 Not financial advice.
 What I did: ...
