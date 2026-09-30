@@ -1,0 +1,21 @@
+{
+  "name": "stock-agent-console",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stock analysis console: React frontend + Express backend + opencode subagents (no API keys)",
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "dev:frontend": "npm --workspace frontend run dev",
+    "dev:backend": "npm --workspace backend start",
+    "build": "npm --workspace frontend run build",
+    "start": "npm --workspace backend start"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

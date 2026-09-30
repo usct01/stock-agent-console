@@ -1,0 +1,15 @@
+# deps
+node_modules/
+# builds
+frontend/dist/
+# runtime caches + logs (regenerated, never commit)
+.opencode/cache/
+*.log
+/tmp/
+# env + OS
+.env
+.env.*
+!.env.example
+.DS_Store
+# local tooling
+.local/
